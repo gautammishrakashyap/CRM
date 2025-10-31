@@ -1,13 +1,10 @@
+import os
+from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
-import os
 
-# Optional: load .env when present
-try:
-    from dotenv import load_dotenv
-    load_dotenv()
-except Exception:
-    load_dotenv = None
+# Load environment variables from .env if present
+load_dotenv()
 
 app = FastAPI()
 
@@ -48,5 +45,5 @@ async def shutdown_event():
 
 if __name__ == "__main__":
     import uvicorn
-    port = int(os.environ.get("API_PORT", 8000))
-    uvicorn.run(app, host="0.0.0.0", port=port)
+    PORT = int(os.getenv("PORT", 8000))
+    uvicorn.run(app, host="0.0.0.0", port=PORT)
