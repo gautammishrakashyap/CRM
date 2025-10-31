@@ -1,0 +1,338 @@
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Query
+from fastapi.security import HTTPBearer
+from typing import List, Optional, Dict, Any
+from datetime import datetime
+import logging
+
+from app.core.dependencies import get_user_dep, get_mongodb_repo
+from app.repository.user import UserRepository
+from app.repository.student import StudentRepository
+from app.schema.user import User
+from app.schema.student import (
+    StudentProfileResponse, CreateStudentProfileRequest,
+    UpdatePersonalDetailsRequest, UpdateContactDetailsRequest,
+    UpdateAddressDetailsRequest, AddQualificationRequest,
+    UpdateQualificationRequest, AddCollegePreferenceRequest,
+    UpdateCollegePreferenceRequest, QualificationResponse,
+    CollegePreferenceResponse, FileUploadResponse,
+    ProfileCompletionStatusResponse
+)
+
+logger = logging.getLogger(__name__)
+security = HTTPBearer()
+
+router = APIRouter(
+    prefix="/student",
+    tags=["Student Profile"],
+    dependencies=[Depends(security)]
+)
+
+
+@router.get("/profile")
+async def get_student_profile(
+    current_user: User = Depends(get_user_dep),
+    student_repo: StudentRepository = Depends(get_mongodb_repo(StudentRepository))
+):
+    """Get current student's profile"""
+    try:
+        profile = student_repo.get_profile_by_user_id(current_user.user_id)
+        if not profile:
+            raise HTTPException(status_code=404, detail="Student profile not found")
+        
+        return {
+            "success": True,
+            "data": profile,
+            "message": "Profile retrieved successfully"
+        }
+    except Exception as e:
+        logger.error(f"Error getting student profile: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to retrieve profile")
+
+
+@router.post("/profile/create")
+async def create_student_profile(
+    first_name: str = Form(...),
+    last_name: str = Form(...),
+    email: str = Form(None),
+    phone: str = Form(None),
+    current_user: User = Depends(get_user_dep),
+    student_repo: StudentRepository = Depends(get_mongodb_repo(StudentRepository))
+):
+    """Create student profile"""
+    try:
+        # Check if profile already exists
+        existing_profile = student_repo.get_profile_by_user_id(current_user.user_id)
+        if existing_profile:
+            raise HTTPException(status_code=400, detail="Student profile already exists")
+        
+        # Create basic profile data
+        profile_data = {
+            "user_id": current_user.user_id,
+            "personal_details": {
+                "first_name": first_name,
+                "last_name": last_name
+            },
+            "contact_details": {
+                "email": email or current_user.email,
+                "phone": phone
+            },
+            "created_at": datetime.utcnow(),
+            "updated_at": datetime.utcnow(),
+            "profile_completed": False,
+            "completion_percentage": 25  # Basic info provided
+        }
+        
+        # Create profile
+        profile = student_repo.create_profile(current_user.user_id, profile_data)
+        
+        return {
+            "success": True,
+            "data": profile,
+            "message": "Profile created successfully"
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error creating student profile: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to create profile")
+
+
+@router.put("/profile/personal")
+async def update_personal_details(
+    first_name: str = Form(None),
+    last_name: str = Form(None),
+    date_of_birth: str = Form(None),
+    gender: str = Form(None),
+    current_user: User = Depends(get_user_dep),
+    student_repo: StudentRepository = Depends(get_mongodb_repo(StudentRepository))
+):
+    """Update personal details"""
+    try:
+        update_data = {}
+        if first_name:
+            update_data["personal_details.first_name"] = first_name
+        if last_name:
+            update_data["personal_details.last_name"] = last_name
+        if date_of_birth:
+            update_data["personal_details.date_of_birth"] = date_of_birth
+        if gender:
+            update_data["personal_details.gender"] = gender
+        
+        if not update_data:
+            raise HTTPException(status_code=400, detail="No data provided for update")
+        
+        update_data["updated_at"] = datetime.utcnow()
+        
+        profile = student_repo.update_profile(current_user.user_id, update_data)
+        if not profile:
+            raise HTTPException(status_code=404, detail="Student profile not found")
+        
+        return {
+            "success": True,
+            "data": profile,
+            "message": "Personal details updated successfully"
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating personal details: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to update personal details")
+
+
+@router.put("/profile/contact")
+async def update_contact_details(
+    email: str = Form(None),
+    phone: str = Form(None),
+    alternate_phone: str = Form(None),
+    current_user: User = Depends(get_user_dep),
+    student_repo: StudentRepository = Depends(get_mongodb_repo(StudentRepository))
+):
+    """Update contact details"""
+    try:
+        update_data = {}
+        if email:
+            update_data["contact_details.email"] = email
+        if phone:
+            update_data["contact_details.phone"] = phone
+        if alternate_phone:
+            update_data["contact_details.alternate_phone"] = alternate_phone
+        
+        if not update_data:
+            raise HTTPException(status_code=400, detail="No data provided for update")
+        
+        update_data["updated_at"] = datetime.utcnow()
+        
+        profile = student_repo.update_profile(current_user.user_id, update_data)
+        if not profile:
+            raise HTTPException(status_code=404, detail="Student profile not found")
+        
+        return {
+            "success": True,
+            "data": profile,
+            "message": "Contact details updated successfully"
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating contact details: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to update contact details")
+
+
+@router.post("/profile/qualification")
+async def add_qualification(
+    level: str = Form(...),
+    institution: str = Form(...),
+    board_university: str = Form(...),
+    percentage_cgpa: float = Form(...),
+    year_of_passing: int = Form(...),
+    subjects: str = Form(""),
+    current_user: User = Depends(get_user_dep),
+    student_repo: StudentRepository = Depends(get_mongodb_repo(StudentRepository))
+):
+    """Add academic qualification"""
+    try:
+        qualification_data = {
+            "qualification_id": f"qual_{int(datetime.utcnow().timestamp())}",
+            "level": level,
+            "institution": institution,
+            "board_university": board_university,
+            "percentage_cgpa": percentage_cgpa,
+            "year_of_passing": year_of_passing,
+            "subjects": [s.strip() for s in subjects.split(",") if s.strip()],
+            "created_at": datetime.utcnow()
+        }
+        
+        qualification = student_repo.add_qualification(current_user.user_id, qualification_data)
+        if not qualification:
+            raise HTTPException(status_code=404, detail="Student profile not found")
+        
+        return {
+            "success": True,
+            "data": qualification,
+            "message": "Qualification added successfully"
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error adding qualification: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to add qualification")
+
+
+@router.post("/profile/college-preference")
+async def add_college_preference(
+    college_name: str = Form(...),
+    course_name: str = Form(...),
+    location: str = Form(...),
+    preference_rank: int = Form(...),
+    entrance_exam: str = Form(""),
+    current_user: User = Depends(get_user_dep),
+    student_repo: StudentRepository = Depends(get_mongodb_repo(StudentRepository))
+):
+    """Add college preference"""
+    try:
+        preference_data = {
+            "preference_id": f"pref_{int(datetime.utcnow().timestamp())}",
+            "college_name": college_name,
+            "course_name": course_name,
+            "location": location,
+            "preference_rank": preference_rank,
+            "entrance_exam": entrance_exam,
+            "application_status": "not_applied",
+            "created_at": datetime.utcnow()
+        }
+        
+        preference = student_repo.add_college_preference(current_user.user_id, preference_data)
+        if not preference:
+            raise HTTPException(status_code=404, detail="Student profile not found")
+        
+        return {
+            "success": True,
+            "data": preference,
+            "message": "College preference added successfully"
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error adding college preference: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to add college preference")
+
+
+@router.get("/profile/completion")
+async def get_profile_completion_status(
+    current_user: User = Depends(get_user_dep),
+    student_repo: StudentRepository = Depends(get_mongodb_repo(StudentRepository))
+):
+    """Get profile completion status"""
+    try:
+        profile = student_repo.get_profile_by_user_id(current_user.user_id)
+        if not profile:
+            raise HTTPException(status_code=404, detail="Student profile not found")
+        
+        # Calculate completion status
+        completion_data = {
+            "completion_percentage": profile.get("completion_percentage", 0),
+            "profile_completed": profile.get("profile_completed", False),
+            "missing_sections": [],
+            "completed_sections": []
+        }
+        
+        # Check sections
+        if not profile.get("personal_details"):
+            completion_data["missing_sections"].append("personal_details")
+        else:
+            completion_data["completed_sections"].append("personal_details")
+            
+        if not profile.get("contact_details"):
+            completion_data["missing_sections"].append("contact_details")
+        else:
+            completion_data["completed_sections"].append("contact_details")
+            
+        if not profile.get("qualifications"):
+            completion_data["missing_sections"].append("qualifications")
+        else:
+            completion_data["completed_sections"].append("qualifications")
+        
+        return {
+            "success": True,
+            "data": completion_data,
+            "message": "Profile completion status retrieved successfully"
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting profile completion status: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to get completion status")
+
+
+# Admin endpoints
+@router.get("/admin/profiles")
+async def get_all_student_profiles(
+    page: int = Query(1, ge=1),
+    limit: int = Query(10, ge=1, le=100),
+    search: Optional[str] = Query(None),
+    current_user: User = Depends(get_user_dep),
+    student_repo: StudentRepository = Depends(get_mongodb_repo(StudentRepository))
+):
+    """Get all student profiles (Admin only)"""
+    try:
+        # TODO: Add admin permission check
+        result = student_repo.get_all_profiles(page, limit, search)
+        return {
+            "success": True,
+            "data": result,
+            "message": "Student profiles retrieved successfully"
+        }
+    except Exception as e:
+        logger.error(f"Error getting all student profiles: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to retrieve student profiles")
+
+
+@router.get("/config/upload")
+async def get_upload_config():
+    """Get upload configuration"""
+    return {
+        "max_file_size": 10485760,  # 10MB
+        "allowed_image_extensions": ["jpg", "jpeg", "png", "gif"],
+        "allowed_document_extensions": ["pdf", "doc", "docx", "txt"],
+        "s3_enabled": False
+    }

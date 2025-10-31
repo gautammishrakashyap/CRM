@@ -1,0 +1,331 @@
+from typing import Optional, List, Dict, Any
+from pymongo import MongoClient
+from pymongo.collection import Collection
+from bson import ObjectId
+from app.repository.base import BaseRepository
+from app.model.student import StudentProfileDB, AcademicQualification, CollegePreference
+from app.core.config import MONGO_DATABASE_NAME
+from datetime import datetime
+import logging
+
+logger = logging.getLogger(__name__)
+
+
+class StudentRepository(BaseRepository[StudentProfileDB]):
+    """Repository for student profile operations"""
+    
+    def __init__(self, mongo_client: MongoClient):
+        super().__init__(mongo_client, StudentProfileDB)
+        self.db = mongo_client[MONGO_DATABASE_NAME]
+    
+    def get_by_user_id(self, collection_name: str, user_id: str) -> Optional[StudentProfileDB]:
+        """Get student profile by user ID"""
+        try:
+            collection: Collection = self.db[collection_name]
+            document = collection.find_one({"user_id": ObjectId(user_id)})
+            if document:
+                return StudentProfileDB(**document)
+            return None
+        except Exception as e:
+            logger.error(f"Error getting student profile by user_id {user_id}: {str(e)}")
+            raise
+    
+    def create_profile(self, collection_name: str, profile: StudentProfileDB) -> StudentProfileDB:
+        """Create a new student profile"""
+        try:
+            collection: Collection = self.db[collection_name]
+            profile.created_at = datetime.utcnow()
+            profile.updated_at = datetime.utcnow()
+            
+            profile_dict = profile.model_dump(by_alias=True, exclude_unset=True)
+            result = collection.insert_one(profile_dict)
+            
+            created_profile = collection.find_one({"_id": result.inserted_id})
+            return StudentProfileDB(**created_profile)
+        except Exception as e:
+            logger.error(f"Error creating student profile: {str(e)}")
+            raise
+    
+    def update_profile(self, collection_name: str, user_id: str, update_data: Dict[str, Any]) -> Optional[StudentProfileDB]:
+        """Update student profile"""
+        try:
+            collection: Collection = self.db[collection_name]
+            update_data["updated_at"] = datetime.utcnow()
+            
+            result = collection.update_one(
+                {"user_id": ObjectId(user_id)},
+                {"$set": update_data}
+            )
+            
+            if result.modified_count > 0:
+                updated_profile = collection.find_one({"user_id": ObjectId(user_id)})
+                return StudentProfileDB(**updated_profile)
+            return None
+        except Exception as e:
+            logger.error(f"Error updating student profile for user {user_id}: {str(e)}")
+            raise
+    
+    def add_qualification(self, collection_name: str, user_id: str, qualification: AcademicQualification) -> Optional[StudentProfileDB]:
+        """Add academic qualification to student profile"""
+        try:
+            collection: Collection = self.db[collection_name]
+            qualification_dict = qualification.model_dump()
+            
+            result = collection.update_one(
+                {"user_id": ObjectId(user_id)},
+                {
+                    "$push": {"qualifications": qualification_dict},
+                    "$set": {"updated_at": datetime.utcnow()}
+                }
+            )
+            
+            if result.modified_count > 0:
+                updated_profile = collection.find_one({"user_id": ObjectId(user_id)})
+                return StudentProfileDB(**updated_profile)
+            return None
+        except Exception as e:
+            logger.error(f"Error adding qualification for user {user_id}: {str(e)}")
+            raise
+    
+    def update_qualification(self, collection_name: str, user_id: str, qualification_index: int, update_data: Dict[str, Any]) -> Optional[StudentProfileDB]:
+        """Update specific qualification by index"""
+        try:
+            collection: Collection = self.db[collection_name]
+            
+            # Build the update query for array element
+            update_query = {"$set": {"updated_at": datetime.utcnow()}}
+            for key, value in update_data.items():
+                update_query["$set"][f"qualifications.{qualification_index}.{key}"] = value
+            
+            result = collection.update_one(
+                {"user_id": ObjectId(user_id)},
+                update_query
+            )
+            
+            if result.modified_count > 0:
+                updated_profile = collection.find_one({"user_id": ObjectId(user_id)})
+                return StudentProfileDB(**updated_profile)
+            return None
+        except Exception as e:
+            logger.error(f"Error updating qualification for user {user_id}: {str(e)}")
+            raise
+    
+    def remove_qualification(self, collection_name: str, user_id: str, qualification_index: int) -> Optional[StudentProfileDB]:
+        """Remove qualification by index"""
+        try:
+            collection: Collection = self.db[collection_name]
+            
+            # First get the current profile to access the qualifications array
+            profile = collection.find_one({"user_id": ObjectId(user_id)})
+            if not profile or "qualifications" not in profile:
+                return None
+            
+            qualifications = profile["qualifications"]
+            if qualification_index < 0 or qualification_index >= len(qualifications):
+                return None
+            
+            # Remove the qualification at the specified index
+            qualifications.pop(qualification_index)
+            
+            result = collection.update_one(
+                {"user_id": ObjectId(user_id)},
+                {
+                    "$set": {
+                        "qualifications": qualifications,
+                        "updated_at": datetime.utcnow()
+                    }
+                }
+            )
+            
+            if result.modified_count > 0:
+                updated_profile = collection.find_one({"user_id": ObjectId(user_id)})
+                return StudentProfileDB(**updated_profile)
+            return None
+        except Exception as e:
+            logger.error(f"Error removing qualification for user {user_id}: {str(e)}")
+            raise
+    
+    def add_college_preference(self, collection_name: str, user_id: str, preference: CollegePreference) -> Optional[StudentProfileDB]:
+        """Add college preference to student profile"""
+        try:
+            collection: Collection = self.db[collection_name]
+            preference_dict = preference.model_dump()
+            
+            result = collection.update_one(
+                {"user_id": ObjectId(user_id)},
+                {
+                    "$push": {"college_preferences": preference_dict},
+                    "$set": {"updated_at": datetime.utcnow()}
+                }
+            )
+            
+            if result.modified_count > 0:
+                updated_profile = collection.find_one({"user_id": ObjectId(user_id)})
+                return StudentProfileDB(**updated_profile)
+            return None
+        except Exception as e:
+            logger.error(f"Error adding college preference for user {user_id}: {str(e)}")
+            raise
+    
+    def update_college_preference(self, collection_name: str, user_id: str, preference_index: int, update_data: Dict[str, Any]) -> Optional[StudentProfileDB]:
+        """Update specific college preference by index"""
+        try:
+            collection: Collection = self.db[collection_name]
+            
+            # Build the update query for array element
+            update_query = {"$set": {"updated_at": datetime.utcnow()}}
+            for key, value in update_data.items():
+                update_query["$set"][f"college_preferences.{preference_index}.{key}"] = value
+            
+            result = collection.update_one(
+                {"user_id": ObjectId(user_id)},
+                update_query
+            )
+            
+            if result.modified_count > 0:
+                updated_profile = collection.find_one({"user_id": ObjectId(user_id)})
+                return StudentProfileDB(**updated_profile)
+            return None
+        except Exception as e:
+            logger.error(f"Error updating college preference for user {user_id}: {str(e)}")
+            raise
+    
+    def remove_college_preference(self, collection_name: str, user_id: str, preference_index: int) -> Optional[StudentProfileDB]:
+        """Remove college preference by index"""
+        try:
+            collection: Collection = self.db[collection_name]
+            
+            # First get the current profile to access the college_preferences array
+            profile = collection.find_one({"user_id": ObjectId(user_id)})
+            if not profile or "college_preferences" not in profile:
+                return None
+            
+            college_preferences = profile["college_preferences"]
+            if preference_index < 0 or preference_index >= len(college_preferences):
+                return None
+            
+            # Remove the preference at the specified index
+            college_preferences.pop(preference_index)
+            
+            result = collection.update_one(
+                {"user_id": ObjectId(user_id)},
+                {
+                    "$set": {
+                        "college_preferences": college_preferences,
+                        "updated_at": datetime.utcnow()
+                    }
+                }
+            )
+            
+            if result.modified_count > 0:
+                updated_profile = collection.find_one({"user_id": ObjectId(user_id)})
+                return StudentProfileDB(**updated_profile)
+            return None
+        except Exception as e:
+            logger.error(f"Error removing college preference for user {user_id}: {str(e)}")
+            raise
+    
+    def update_profile_image(self, collection_name: str, user_id: str, image_url: str) -> Optional[StudentProfileDB]:
+        """Update profile image URL"""
+        try:
+            collection: Collection = self.db[collection_name]
+            
+            result = collection.update_one(
+                {"user_id": ObjectId(user_id)},
+                {
+                    "$set": {
+                        "profile_image_url": image_url,
+                        "updated_at": datetime.utcnow()
+                    }
+                }
+            )
+            
+            if result.modified_count > 0:
+                updated_profile = collection.find_one({"user_id": ObjectId(user_id)})
+                return StudentProfileDB(**updated_profile)
+            return None
+        except Exception as e:
+            logger.error(f"Error updating profile image for user {user_id}: {str(e)}")
+            raise
+    
+    def add_document(self, collection_name: str, user_id: str, category: str, document_url: str) -> Optional[StudentProfileDB]:
+        """Add document URL to specific category"""
+        try:
+            collection: Collection = self.db[collection_name]
+            
+            result = collection.update_one(
+                {"user_id": ObjectId(user_id)},
+                {
+                    "$push": {f"documents.{category}": document_url},
+                    "$set": {"updated_at": datetime.utcnow()}
+                }
+            )
+            
+            if result.modified_count > 0:
+                updated_profile = collection.find_one({"user_id": ObjectId(user_id)})
+                return StudentProfileDB(**updated_profile)
+            return None
+        except Exception as e:
+            logger.error(f"Error adding document for user {user_id}: {str(e)}")
+            raise
+    
+    def calculate_completion_percentage(self, profile: StudentProfileDB) -> int:
+        """Calculate profile completion percentage"""
+        try:
+            total_sections = 8  # Total number of sections to complete
+            completed_sections = 0
+            
+            # Check personal details
+            if profile.personal_details:
+                completed_sections += 1
+            
+            # Check address details
+            if profile.address_details:
+                completed_sections += 1
+            
+            # Check contact details
+            if profile.contact_details:
+                completed_sections += 1
+            
+            # Check qualifications (at least one)
+            if profile.qualifications:
+                completed_sections += 1
+            
+            # Check interests (at least one)
+            if profile.interests:
+                completed_sections += 1
+            
+            # Check career goals
+            if profile.career_goals:
+                completed_sections += 1
+            
+            # Check college preferences (at least one)
+            if profile.college_preferences:
+                completed_sections += 1
+            
+            # Check profile image
+            if profile.profile_image_url:
+                completed_sections += 1
+            
+            return int((completed_sections / total_sections) * 100)
+        except Exception as e:
+            logger.error(f"Error calculating completion percentage: {str(e)}")
+            return 0
+    
+    def update_completion_status(self, collection_name: str, user_id: str) -> Optional[StudentProfileDB]:
+        """Update profile completion status and percentage"""
+        try:
+            profile = self.get_by_user_id(collection_name, user_id)
+            if not profile:
+                return None
+            
+            completion_percentage = self.calculate_completion_percentage(profile)
+            profile_completed = completion_percentage >= 90  # 90% threshold for completion
+            
+            return self.update_profile(collection_name, user_id, {
+                "completion_percentage": completion_percentage,
+                "profile_completed": profile_completed
+            })
+        except Exception as e:
+            logger.error(f"Error updating completion status for user {user_id}: {str(e)}")
+            raise

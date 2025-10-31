@@ -1,0 +1,62 @@
+name: Deploy Frontend to Production
+
+on:
+  push:
+    branches:
+      - main
+
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Deploy via SSH to remote server
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script: |
+            echo "📁 Switching to frontend deployment directory"
+
+            if [ ! -d ~/deploy/DRISHKUL_PATHFINDER/.git ]; then
+                echo "🚀 Cloning frontend repository (first time setup)"
+                git clone git@github.com:hsnits/Drishkul_Platform.git ~/deploy/DRISHKUL_PATHFINDER || exit 1
+            else
+                cd ~/deploy/DRISHKUL_PATHFINDER || exit 1
+
+                echo "📦 Pulling latest frontend code"
+                git fetch origin
+                git reset --hard origin/main
+            fi
+
+            cd ~/deploy/DRISHKUL_PATHFINDER || exit 1
+
+            echo "🐳 Building Docker image for frontend"
+            sudo docker build --no-cache -t drishkul-frontend .
+
+            echo "🛑 Removing old frontend container (if exists)"
+            sudo docker rm -f drishkul-frontend || true
+
+            echo "🚀 Starting new frontend container on port 8080"
+            sudo docker run -d --name drishkul-frontend -p 8080:8080 drishkul-frontend
+
+            echo "🐳 Building Docker image for Backend"
+            cd ~/deploy/DRISHKUL_PATHFINDER/Backend || exit 1
+            sudo docker build --no-cache -t drishkul-backend .
+
+            echo "🛑 Removing old backend container"
+            sudo docker rm -f drishkul-backend || true
+
+            echo "🚀 Starting new backend container on port 8000"
+            sudo docker run -d --name drishkul-backend -p 8000:8000 drishkul-backend
+
+
+ 
+
+              
