@@ -1,16 +1,30 @@
 import os
 from dotenv import load_dotenv
 from fastapi import FastAPI
-from fastapi.responses import JSONResponse
+from fastapi import Request
 
 # Load environment variables from .env if present
 load_dotenv()
 
 app = FastAPI()
 
+
+@app.get("/")
+def read_root():
+    return {"message": "CRM API is running", "status": "active"}
+
+
 @app.get("/health")
-async def health():
-    return JSONResponse({"status": "ok"})
+def health_check():
+    return {"status": "ok", "service": "CRM"}
+
+
+@app.post("/api/v1/token")
+def login_for_access_token(username: str = None, password: str = None):
+    # Basic token endpoint — placeholder for real auth
+    if username and password:
+        return {"access_token": "fake-token-12345", "token_type": "bearer"}
+    return {"error": "Missing credentials"}
 
 
 # Database startup/shutdown hooks (optional)
