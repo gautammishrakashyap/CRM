@@ -8,3 +8,15 @@ wheels/
 
 # Virtual environments
 .venv
+
+# Local env files
+.env
+.env.example
+
+# Python cache and build artifacts
+__pycache__/
+*.pyc
+venv/
+*.egg-info/
+dist/
+build/
