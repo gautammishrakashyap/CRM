@@ -8,6 +8,14 @@ load_dotenv()
 
 app = FastAPI()
 
+# ---- include routers from internal app package (if present) ----
+try:
+    # app.api is the original package with many endpoints in this repo
+    from app.api.routes import router as internal_api_router
+    app.include_router(internal_api_router)
+except Exception as exc:  # pragma: no cover - runtime inclusion
+    print(f"[startup] Notice: app.api.routes not included: {exc}")
+
 
 @app.get("/")
 def read_root():
@@ -19,12 +27,9 @@ def health_check():
     return {"status": "ok", "service": "CRM"}
 
 
-@app.post("/api/v1/token")
-def login_for_access_token(username: str = None, password: str = None):
-    # Basic token endpoint — placeholder for real auth
-    if username and password:
-        return {"access_token": "fake-token-12345", "token_type": "bearer"}
-    return {"error": "Missing credentials"}
+# NOTE: Authentication/token endpoints are provided by the internal
+# `app.api` package (see app/api/endpoints). Do not keep placeholder
+# implementations here to avoid duplication.
 
 
 # Database startup/shutdown hooks (optional)
